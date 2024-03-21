@@ -38,9 +38,9 @@ package-aarch64-unknown-linux-musl:
 	mkdir -p dist
 
 	# .tar.gz
-	tar -czvf dist/chirpstack-concentratord-sx1301_$(PKG_VERSION)_arm64.tar.gz -C target/aarch64-unknown-linux-musl/release chirpstack-concentratord-sx1301
-	tar -czvf dist/chirpstack-concentratord-sx1302_$(PKG_VERSION)_arm64.tar.gz -C target/aarch64-unknown-linux-musl/release chirpstack-concentratord-sx1302
-	tar -czvf dist/chirpstack-concentratord-2g4_$(PKG_VERSION)_arm64.tar.gz -C target/aarch64-unknown-linux-musl/release chirpstack-concentratord-2g4
+	tar -czvf dist/chirpstack-concentratord-sx1301_$(PKG_VERSION)_arm64.tar.gz -C target/aarch64-unknown-linux-musl/release chirpstack-concentratord-sx1301 gateway-id
+	tar -czvf dist/chirpstack-concentratord-sx1302_$(PKG_VERSION)_arm64.tar.gz -C target/aarch64-unknown-linux-musl/release chirpstack-concentratord-sx1302 gateway-id
+	tar -czvf dist/chirpstack-concentratord-2g4_$(PKG_VERSION)_arm64.tar.gz -C target/aarch64-unknown-linux-musl/release chirpstack-concentratord-2g4 gateway-id
 
 package-armv5te-unknown-linux-musleabi: package-multitech-conduit \
 	package-multitech-conduit-ap
@@ -50,18 +50,18 @@ package-armv7-unknown-linux-musleabihf: package-kerlink-ifemtocell package-multi
 	mkdir -p dist
 
 	# .tar.gz
-	tar -czvf dist/chirpstack-concentratord-sx1301_$(PKG_VERSION)_armv7hf.tar.gz -C target/armv7-unknown-linux-musleabihf/release chirpstack-concentratord-sx1301
-	tar -czvf dist/chirpstack-concentratord-sx1302_$(PKG_VERSION)_armv7hf.tar.gz -C target/armv7-unknown-linux-musleabihf/release chirpstack-concentratord-sx1302
-	tar -czvf dist/chirpstack-concentratord-2g4_$(PKG_VERSION)_armv7hf.tar.gz -C target/armv7-unknown-linux-musleabihf/release chirpstack-concentratord-2g4
+	tar -czvf dist/chirpstack-concentratord-sx1301_$(PKG_VERSION)_armv7hf.tar.gz -C target/armv7-unknown-linux-musleabihf/release chirpstack-concentratord-sx1301 gateway-id
+	tar -czvf dist/chirpstack-concentratord-sx1302_$(PKG_VERSION)_armv7hf.tar.gz -C target/armv7-unknown-linux-musleabihf/release chirpstack-concentratord-sx1302 gateway-id
+	tar -czvf dist/chirpstack-concentratord-2g4_$(PKG_VERSION)_armv7hf.tar.gz -C target/armv7-unknown-linux-musleabihf/release chirpstack-concentratord-2g4 gateway-id
 
 package-x86_64-unknown-linux-musl:
 	$(eval PKG_VERSION := $(shell cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].version'))
 	mkdir -p dist
 
 	# .tar.gz
-	tar -czvf dist/chirpstack-concentratord-sx1301_$(PKG_VERSION)_amd64.tar.gz -C target/x86_64-unknown-linux-musl/release chirpstack-concentratord-sx1301
-	tar -czvf dist/chirpstack-concentratord-sx1302_$(PKG_VERSION)_amd64.tar.gz -C target/x86_64-unknown-linux-musl/release chirpstack-concentratord-sx1302
-	tar -czvf dist/chirpstack-concentratord-2g4_$(PKG_VERSION)_amd64.tar.gz -C target/x86_64-unknown-linux-musl/release chirpstack-concentratord-2g4
+	tar -czvf dist/chirpstack-concentratord-sx1301_$(PKG_VERSION)_amd64.tar.gz -C target/x86_64-unknown-linux-musl/release chirpstack-concentratord-sx1301 gateway-id
+	tar -czvf dist/chirpstack-concentratord-sx1302_$(PKG_VERSION)_amd64.tar.gz -C target/x86_64-unknown-linux-musl/release chirpstack-concentratord-sx1302 gateway-id
+	tar -czvf dist/chirpstack-concentratord-2g4_$(PKG_VERSION)_amd64.tar.gz -C target/x86_64-unknown-linux-musl/release chirpstack-concentratord-2g4 gateway-id
 
 package-kerlink-ifemtocell:
 	cd packaging/vendor/kerlink/ifemtocell && ./package.sh
