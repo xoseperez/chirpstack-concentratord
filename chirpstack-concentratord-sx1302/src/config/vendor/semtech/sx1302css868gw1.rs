@@ -9,13 +9,17 @@ pub fn new(conf: &config::Configuration) -> Result<Configuration> {
     let region = conf.gateway.region.unwrap_or(Region::EU868);
 
     let (tx_freq_min, tx_freq_max) = match region {
-        Region::EU868 => (863000000, 870000000),
+        Region::EU868 => (863_000_000, 870_000_000),
+        Region::IN865 => (865_000_000, 867_000_000),
+        Region::RU864 => (863_000_000, 870_000_000),
         _ => return Err(anyhow!("Region is not supported: {}", region)),
     };
 
     let gps = conf.gateway.model_flags.contains(&"GNSS".to_string());
+    let enforce_duty_cycle = conf.gateway.model_flags.contains(&"ENFORCE_DC".to_string());
 
     Ok(Configuration {
+        enforce_duty_cycle,
         radio_count: 2,
         clock_source: 0,
         full_duplex: false,

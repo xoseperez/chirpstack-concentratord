@@ -47,7 +47,8 @@ pub fn run(
         .expect("bind command socket error");
 
     // setup jit queue
-    let queue: jitqueue::Queue<wrapper::TxPacket> = jitqueue::Queue::new(32);
+    let queue: jitqueue::Queue<wrapper::TxPacket> =
+        jitqueue::Queue::new(32, config.get_duty_cycle_tracker());
     let queue = Arc::new(Mutex::new(queue));
 
     // setup threads
@@ -57,37 +58,55 @@ pub fn run(
     // uplink thread
     threads.push(thread::spawn({
         let stop_receive = signal_pool.new_receiver();
+        let stop_send = stop_send.clone();
         let gateway_id = config.gateway.gateway_id_bytes.clone();
         let disable_crc_filter = config.concentratord.disable_crc_filter;
         let time_fallback = config.gateway.time_fallback_enabled;
 
         move || {
-            handler::uplink::handle_loop(
+            if let Err(e) = handler::uplink::handle_loop(
                 &gateway_id,
                 stop_receive,
                 disable_crc_filter,
                 time_fallback,
-            );
+            ) {
+                error!("Uplink loop error: {}", e);
+                stop_send.send(Signal::Stop).unwrap();
+            }
+
+            debug!("Uplink loop ended");
         }
     }));
 
     // timer sync thread
     threads.push(thread::spawn({
         let stop_receive = signal_pool.new_receiver();
+        let stop_send = stop_send.clone();
 
         move || {
-            handler::timersync::timesync_loop(stop_receive);
+            if let Err(e) = handler::timersync::timesync_loop(stop_receive) {
+                error!("Typesync loop error: {}", e);
+                stop_send.send(Signal::Stop).unwrap();
+            }
+
+            debug!("Timesync loop ended");
         }
     }));
 
     // jit thread
     threads.push(thread::spawn({
         let queue = Arc::clone(&queue);
+        let antenna_gain_dbi = config.gateway.antenna_gain;
         let stop_receive = signal_pool.new_receiver();
-        let antenna_gain = config.gateway.antenna_gain;
+        let stop_send = stop_send.clone();
 
         move || {
-            handler::jit::jit_loop(queue, antenna_gain, stop_receive);
+            if let Err(e) = handler::jit::jit_loop(queue, antenna_gain_dbi, stop_receive) {
+                error!("JIT loop error: {}", e);
+                stop_send.send(Signal::Stop).unwrap();
+            }
+
+            debug!("JIT loop ended");
         }
     }));
 
@@ -97,25 +116,33 @@ pub fn run(
         let gateway_id = config.gateway.gateway_id_bytes.clone();
         let queue = Arc::clone(&queue);
         let stop_receive = signal_pool.new_receiver();
-        let stop_send = stop_send;
+        let stop_send = stop_send.clone();
+        let stop_send_err = stop_send.clone();
 
         move || {
-            handler::command::handle_loop(
+            if let Err(e) = handler::command::handle_loop(
                 &vendor_config,
                 &gateway_id,
                 queue,
                 rep_sock,
                 stop_receive,
                 stop_send,
-            );
+            ) {
+                error!("Command handler loop error: {}", e);
+                stop_send_err.send(Signal::Stop).unwrap();
+            }
+
+            debug!("Command handler lopp ended");
         }
     }));
 
     // stats thread
     threads.push(thread::spawn({
         let gateway_id = config.gateway.gateway_id_bytes.clone();
+        let queue = Arc::clone(&queue);
         let stats_interval = config.concentratord.stats_interval;
         let stop_receive = signal_pool.new_receiver();
+        let stop_send = stop_send.clone();
         let mut metadata = HashMap::new();
         metadata.insert(
             "config_version".to_string(),
@@ -129,7 +156,18 @@ pub fn run(
         metadata.insert("hal_version".to_string(), hal::version_info());
 
         move || {
-            handler::stats::stats_loop(&gateway_id, &stats_interval, stop_receive, &metadata);
+            if let Err(e) = handler::stats::stats_loop(
+                &gateway_id,
+                &stats_interval,
+                stop_receive,
+                &metadata,
+                queue,
+            ) {
+                error!("Stats loop error: {}", e);
+                stop_send.send(Signal::Stop).unwrap();
+            }
+
+            debug!("Stats loop ended");
         }
     }));
 
@@ -138,18 +176,30 @@ pub fn run(
         threads.push(thread::spawn({
             let gps = config.gateway.model_config.gps.clone();
             let stop_receive = signal_pool.new_receiver();
+            let stop_send = stop_send.clone();
 
             move || {
-                handler::gps::gps_loop(gps, stop_receive);
+                if let Err(e) = handler::gps::gps_loop(gps, stop_receive) {
+                    error!("GPS loop error: {}", e);
+                    stop_send.send(Signal::Stop).unwrap();
+                }
+
+                debug!("GPS loop ended");
             }
         }));
 
         // gps validate thread
         threads.push(thread::spawn({
             let stop_receive = signal_pool.new_receiver();
+            let stop_send = stop_send.clone();
 
             move || {
-                handler::gps::gps_validate_loop(stop_receive);
+                if let Err(e) = handler::gps::gps_validate_loop(stop_receive) {
+                    error!("GPS validate loop error: {}", e);
+                    stop_send.send(Signal::Stop).unwrap();
+                }
+
+                debug!("GPS validate loop ended");
             }
         }));
 
@@ -159,9 +209,17 @@ pub fn run(
                 let beacon_config = config.gateway.beacon.clone();
                 let queue = Arc::clone(&queue);
                 let stop_receive = signal_pool.new_receiver();
+                let stop_send = stop_send.clone();
 
                 move || {
-                    handler::beacon::beacon_loop(&beacon_config, queue, stop_receive);
+                    if let Err(e) =
+                        handler::beacon::beacon_loop(&beacon_config, queue, stop_receive)
+                    {
+                        error!("Beacon loop error: {}", e);
+                        stop_send.send(Signal::Stop).unwrap();
+                    }
+
+                    debug!("Beacon loop ended");
                 }
             }));
         }

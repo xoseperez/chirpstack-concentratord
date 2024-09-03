@@ -2,7 +2,7 @@ use anyhow::Result;
 use libloragw_sx1301::hal;
 
 use super::super::super::super::config::{self, Region};
-use super::super::{Configuration, Gps};
+use super::super::Configuration;
 
 // source: http://git.multitech.net/cgi-bin/cgit.cgi/meta-mlinux.git/tree/recipes-connectivity/lora/lora-packet-forwarder/global_conf.json.3.1.0.MTCAP-LORA-1-5.US915.basic
 pub fn new(conf: &config::Configuration) -> Result<Configuration> {
@@ -13,8 +13,11 @@ pub fn new(conf: &config::Configuration) -> Result<Configuration> {
         _ => return Err(anyhow!("Region is not supported: {}", region)),
     };
 
+    let enforce_duty_cycle = conf.gateway.model_flags.contains(&"ENFORCE_DC".to_string());
+
     Ok(Configuration {
         radio_min_max_tx_freq,
+        enforce_duty_cycle,
         radio_count: 2,
         clock_source: 0,
         radio_rssi_offset: vec![-162.0, -162.0],
@@ -152,8 +155,7 @@ pub fn new(conf: &config::Configuration) -> Result<Configuration> {
                 dac_gain: 3,
             },
         ],
-        gps: Gps::None,
         spidev_path: "/dev/spidev0.0".to_string(),
-        reset_pin: None,
+        ..Default::default()
     })
 }

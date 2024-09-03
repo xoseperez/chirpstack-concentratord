@@ -2,7 +2,7 @@ use anyhow::Result;
 use libloragw_sx1302::hal;
 
 use super::super::super::super::config::{self, Region};
-use super::super::{ComType, Configuration, Gps, RadioConfig};
+use super::super::{ComType, Configuration, RadioConfig};
 
 // The Seeed wiki for the WM1302 points to the Semtech source:
 // https://wiki.seeedstudio.com/WM1302_module/#step3-get-and-compile-sx1302-source-code
@@ -166,7 +166,11 @@ pub fn new(conf: &config::Configuration) -> Result<Configuration> {
         _ => return Err(anyhow!("Region not supported: {}", region)),
     };
 
+    let usb = conf.gateway.model_flags.contains(&"USB".to_string());
+    let enforce_duty_cycle = conf.gateway.model_flags.contains(&"ENFORCE_DC".to_string());
+
     Ok(Configuration {
+        enforce_duty_cycle,
         radio_count: 2,
         clock_source: 0,
         full_duplex: false,
@@ -207,13 +211,22 @@ pub fn new(conf: &config::Configuration) -> Result<Configuration> {
                 tx_gain_table: vec![],
             },
         ],
-        gps: Gps::None,
-        com_type: ComType::Spi,
-        com_path: conf
-            .gateway
-            .com_dev_path
-            .clone()
-            .unwrap_or("/dev/spidev0.0".to_string()),
+        com_type: match usb {
+            true => ComType::Usb,
+            false => ComType::Spi,
+        },
+        com_path: match usb {
+            true => conf
+                .gateway
+                .com_dev_path
+                .clone()
+                .unwrap_or("/dev/ttyACM0".to_string()),
+            false => conf
+                .gateway
+                .com_dev_path
+                .clone()
+                .unwrap_or("/dev/spidev0.0".to_string()),
+        },
         i2c_path: Some(
             conf.gateway
                 .i2c_dev_path
@@ -224,7 +237,6 @@ pub fn new(conf: &config::Configuration) -> Result<Configuration> {
         sx1302_reset_pin: conf.gateway.get_sx1302_reset_pin("/dev/gpiochip0", 17),
         sx1302_power_en_pin: conf.gateway.get_sx1302_power_en_pin("/dev/gpiochip0", 18),
         sx1261_reset_pin: conf.gateway.get_sx1261_reset_pin("/dev/gpiochip0", 5),
-        ad5338r_reset_pin: None,
-        reset_commands: None,
+        ..Default::default()
     })
 }

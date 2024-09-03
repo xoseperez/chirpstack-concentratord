@@ -464,12 +464,14 @@ pub fn new(conf: &config::Configuration) -> Result<Configuration> {
     };
 
     let gps = conf.gateway.model_flags.contains(&"GNSS".to_string());
+    let enforce_duty_cycle = conf.gateway.model_flags.contains(&"ENFORCE_DC".to_string());
 
     Ok(Configuration {
         radio_rssi_offset,
         radio_type,
         radio_min_max_tx_freq,
         tx_gain_table,
+        enforce_duty_cycle,
         radio_count: 2,
         clock_source: 1,
         radio_tx_enabled: vec![true, false],
@@ -489,6 +491,6 @@ pub fn new(conf: &config::Configuration) -> Result<Configuration> {
             .com_dev_path
             .clone()
             .unwrap_or("/dev/spidev0.0".to_string()),
-        reset_pin: conf.gateway.get_sx1301_reset_pin("/dev/gpiochip0", 17)
+        reset_pin: conf.gateway.get_sx1301_reset_pin("/dev/gpiochip0", 17),
     })
 }

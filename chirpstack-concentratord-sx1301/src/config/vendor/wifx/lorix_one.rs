@@ -2,7 +2,7 @@ use anyhow::Result;
 use libloragw_sx1301::hal;
 
 use super::super::super::super::config::{self, Region};
-use super::super::{Configuration, Gps};
+use super::super::Configuration;
 
 // source:
 // https://github.com/Wifx/meta-wifx/blob/krogoth/recipes-connectivity/packet-forwarder/files/configs/global_conf_EU868_2dBi_indoor.json
@@ -15,8 +15,11 @@ pub fn new(conf: &config::Configuration) -> Result<Configuration> {
         _ => return Err(anyhow!("Region is not supported: {}", region)),
     };
 
+    let enforce_duty_cycle = conf.gateway.model_flags.contains(&"ENFORCE_DC".to_string());
+
     Ok(Configuration {
         radio_min_max_tx_freq,
+        enforce_duty_cycle,
         radio_count: 2,
         clock_source: 1,
         radio_rssi_offset: vec![-164.0, -164.0],
@@ -289,8 +292,8 @@ pub fn new(conf: &config::Configuration) -> Result<Configuration> {
         } else {
             panic!("Invalid antenna_gain: {}", conf.gateway.antenna_gain);
         },
-        gps: Gps::None,
         spidev_path: "/dev/spidev0.0".to_string(),
         reset_pin: conf.gateway.get_sx1301_reset_pin("/dev/gpiochip0", 1),
+        ..Default::default()
     })
 }

@@ -10,12 +10,16 @@ pub fn new(conf: &config::Configuration) -> Result<Configuration> {
 
     let (tx_freq_min, tx_freq_max) = match region {
         Region::EU868 => (863_000_000, 870_000_000),
+        Region::IN865 => (865_000_000, 867_000_000),
+        Region::RU864 => (863_000_000, 870_000_000),
         _ => return Err(anyhow!("Region is not supported: {}", region)),
     };
 
     let gps = conf.gateway.model_flags.contains(&"GNSS".to_string());
+    let enforce_duty_cycle = conf.gateway.model_flags.contains(&"ENFORCE_DC".to_string());
 
     Ok(Configuration {
+        enforce_duty_cycle,
         radio_count: 2,
         clock_source: 0,
         full_duplex: false,
@@ -193,8 +197,6 @@ pub fn new(conf: &config::Configuration) -> Result<Configuration> {
         i2c_temp_sensor_addr: Some(0x3b),
         sx1302_reset_pin: conf.gateway.get_sx1302_reset_pin("/dev/gpiochip0", 23),
         sx1302_power_en_pin: conf.gateway.get_sx1302_power_en_pin("/dev/gpiochip0", 18),
-        sx1261_reset_pin: None,
-        ad5338r_reset_pin: None,
-        reset_commands: None,
+        ..Default::default()
     })
 }

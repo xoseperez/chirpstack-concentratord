@@ -9,7 +9,8 @@ pub fn new(conf: &config::Configuration) -> Result<Configuration> {
     let region = conf.gateway.region.unwrap_or(Region::CN470);
 
     let (tx_freq_min, tx_freq_max) = match region {
-        Region::CN470 => (500_000_000, 510_000_000),
+        Region::CN470 => (470_000_000, 510_000_000),
+        Region::EU433 => (433_050_000, 434_900_000),
         _ => return Err(anyhow!("Region is not supported: {}", region)),
     };
 
@@ -193,8 +194,6 @@ pub fn new(conf: &config::Configuration) -> Result<Configuration> {
         i2c_temp_sensor_addr: Some(0x3b),
         sx1302_reset_pin: conf.gateway.get_sx1302_reset_pin("/dev/gpiochip0", 23),
         sx1302_power_en_pin: conf.gateway.get_sx1302_power_en_pin("/dev/gpiochip0", 18),
-        sx1261_reset_pin: None,
-        ad5338r_reset_pin: None,
-        reset_commands: None,
+        ..Default::default()
     })
 }
