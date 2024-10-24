@@ -2,7 +2,8 @@ use anyhow::Result;
 use libloragw_sx1302::hal;
 
 use super::super::super::super::config::{self, Region};
-use super::super::{ComType, Configuration, Gps, RadioConfig};
+use super::super::{ComType, Configuration, RadioConfig};
+use libconcentratord::{gnss, region};
 
 pub enum Port {
     AP1,
@@ -14,8 +15,8 @@ pub enum Port {
 pub fn new(conf: &config::Configuration) -> Result<Configuration> {
     let region = conf.gateway.region.unwrap_or(Region::US915);
 
-    let (tx_freq_min, tx_freq_max) = match region {
-        Region::US915 => (923_000_000, 928_000_000),
+    let tx_min_max_freqs = match region {
+        Region::US915 => region::us915::TX_MIN_MAX_FREQS.to_vec(),
         _ => return Err(anyhow!("Unsupported region: {}", region)),
     };
 
@@ -33,8 +34,7 @@ pub fn new(conf: &config::Configuration) -> Result<Configuration> {
         lora_multi_sf_bandwidth: 125000,
         radio_config: vec![
             RadioConfig {
-                tx_freq_min,
-                tx_freq_max,
+                tx_min_max_freqs,
                 enable: true,
                 radio_type: hal::RadioType::SX1250,
                 single_input_mode: true,
@@ -175,21 +175,22 @@ pub fn new(conf: &config::Configuration) -> Result<Configuration> {
                     coeff_e: 0.0,
                 },
                 tx_enable: false,
-                tx_freq_min: 0,
-                tx_freq_max: 0,
+                tx_min_max_freqs: vec![],
                 tx_gain_table: vec![],
             },
         ],
         gps: match gps {
-            true => Gps::Gpsd,
-            false => Gps::None,
+            true => conf
+                .gateway
+                .get_gnss_dev_path(&gnss::Device::new("gpsd://localhost:2947")),
+            false => gnss::Device::None,
         },
         com_type: ComType::Spi,
         com_path: match port {
-            Port::AP1 => "/dev/spidev0.0".to_string(),
-            Port::AP2 => "/dev/spidev1.0".to_string(),
+            Port::AP1 => conf.gateway.get_com_dev_path("/dev/spidev0.0"),
+            Port::AP2 => conf.gateway.get_com_dev_path("/dev/spidev1.0"),
         },
-        i2c_path: Some("/dev/i2c-1".to_string()),
+        i2c_path: Some(conf.gateway.get_i2c_dev_path("/dev/i2c-1")),
         i2c_temp_sensor_addr: match port {
             Port::AP1 => Some(0x48),
             Port::AP2 => Some(0x49),

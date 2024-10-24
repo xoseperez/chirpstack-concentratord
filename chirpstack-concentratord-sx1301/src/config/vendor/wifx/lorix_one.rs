@@ -3,6 +3,7 @@ use libloragw_sx1301::hal;
 
 use super::super::super::super::config::{self, Region};
 use super::super::Configuration;
+use libconcentratord::region;
 
 // source:
 // https://github.com/Wifx/meta-wifx/blob/krogoth/recipes-connectivity/packet-forwarder/files/configs/global_conf_EU868_2dBi_indoor.json
@@ -10,15 +11,15 @@ use super::super::Configuration;
 pub fn new(conf: &config::Configuration) -> Result<Configuration> {
     let region = conf.gateway.region.unwrap_or(Region::EU868);
 
-    let radio_min_max_tx_freq = match region {
-        Region::EU868 => vec![(863000000, 870000000), (863000000, 870000000)],
+    let tx_min_max_freqs = match region {
+        Region::EU868 => region::eu868::TX_MIN_MAX_FREQS.to_vec(),
         _ => return Err(anyhow!("Region is not supported: {}", region)),
     };
 
     let enforce_duty_cycle = conf.gateway.model_flags.contains(&"ENFORCE_DC".to_string());
 
     Ok(Configuration {
-        radio_min_max_tx_freq,
+        tx_min_max_freqs,
         enforce_duty_cycle,
         radio_count: 2,
         clock_source: 1,
@@ -292,7 +293,7 @@ pub fn new(conf: &config::Configuration) -> Result<Configuration> {
         } else {
             panic!("Invalid antenna_gain: {}", conf.gateway.antenna_gain);
         },
-        spidev_path: "/dev/spidev0.0".to_string(),
+        spidev_path: conf.gateway.get_com_dev_path("/dev/spidev0.0"),
         reset_pin: conf.gateway.get_sx1301_reset_pin("/dev/gpiochip0", 1),
         ..Default::default()
     })

@@ -4,11 +4,10 @@ use std::sync::mpsc::Receiver;
 use std::sync::Mutex;
 use std::time::{Duration, SystemTime};
 
-use crate::config;
 use anyhow::{Context, Result};
 use chrono::offset::Utc;
 use chrono::DateTime;
-use libconcentratord::{gpsd, signals::Signal};
+use libconcentratord::{gnss, gpsd, signals::Signal};
 use libloragw_sx1302::{gps, hal};
 
 lazy_static! {
@@ -42,20 +41,20 @@ pub fn set_static_gps_coords(lat: f64, lon: f64, alt: i16) {
     }
 }
 
-pub fn gps_loop(gps_device: config::vendor::Gps, stop_receive: Receiver<Signal>) -> Result<()> {
+pub fn gps_loop(gps_device: gnss::Device, stop_receive: Receiver<Signal>) -> Result<()> {
     debug!("Starting GPS loop");
 
     let mut gps_reader: Box<dyn BufRead> = match gps_device {
-        config::vendor::Gps::TtyPath(tty_path) => {
+        gnss::Device::TtyPath(tty_path) => {
             info!("Enabling GPS device, tty_path: {}", tty_path);
             let gps_file = gps::enable(&tty_path, gps::GPSFamily::UBX7, 0)?;
             Box::new(BufReader::new(gps_file)) as Box<dyn BufRead>
         }
-        config::vendor::Gps::Gpsd => {
+        gnss::Device::Gpsd(gpsd_host) => {
             info!("Starting gpsd reader, server: localhost:2947");
-            Box::new(gpsd::get_reader("localhost:2947")?) as Box<dyn BufRead>
+            Box::new(gpsd::get_reader(&gpsd_host)?) as Box<dyn BufRead>
         }
-        config::vendor::Gps::None => {
+        gnss::Device::None => {
             warn!("No GPS device configured");
             return Ok(());
         }
@@ -96,6 +95,7 @@ pub fn gps_loop(gps_device: config::vendor::Gps, stop_receive: Receiver<Signal>)
                 match gps::parse_ubx(&buffer) {
                     Ok((m_type, _)) => {
                         if m_type == gps::MessageType::UBX_NAV_TIMEGPS {
+                            debug!("Processing u-blox NAV-TIMEGPS");
                             gps_process_sync();
                         }
                     }
@@ -114,6 +114,7 @@ pub fn gps_loop(gps_device: config::vendor::Gps, stop_receive: Receiver<Signal>)
                 match gps::parse_nmea(&buffer[..buffer.len() - 1]) {
                     Ok(m_type) => {
                         if m_type == gps::MessageType::NMEA_RMC {
+                            debug!("Processing NMEA RMC");
                             gps_process_coords();
                         }
                     }

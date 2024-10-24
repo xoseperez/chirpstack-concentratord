@@ -1,16 +1,17 @@
 use anyhow::Result;
+use libconcentratord::{gnss, region};
 use libloragw_sx1302::hal;
 
 use super::super::super::super::config::{self, Region};
-use super::super::{ComType, Configuration, Gps, RadioConfig};
+use super::super::{ComType, Configuration, RadioConfig};
 
 // source: https://github.com/Lora-net/sx1302_hal/blob/master/packet_forwarder/global_conf.json.sx1250.US915
 pub fn new(conf: &config::Configuration) -> Result<Configuration> {
     let region = conf.gateway.region.unwrap_or(Region::US915);
 
-    let (tx_freq_min, tx_freq_max) = match region {
-        Region::US915 => (923000000, 928000000),
-        Region::AU915 => (915000000, 928000000),
+    let tx_min_max_freqs = match region {
+        Region::US915 => region::us915::TX_MIN_MAX_FREQS.to_vec(),
+        Region::AU915 => region::au915::TX_MIN_MAX_FREQS.to_vec(),
         _ => return Err(anyhow!("Region is not supported: {}", region)),
     };
 
@@ -23,8 +24,7 @@ pub fn new(conf: &config::Configuration) -> Result<Configuration> {
         lora_multi_sf_bandwidth: 125000,
         radio_config: vec![
             RadioConfig {
-                tx_freq_min,
-                tx_freq_max,
+                tx_min_max_freqs,
                 enable: true,
                 radio_type: hal::RadioType::SX1250,
                 single_input_mode: true,
@@ -165,32 +165,19 @@ pub fn new(conf: &config::Configuration) -> Result<Configuration> {
                     coeff_e: 0.0,
                 },
                 tx_enable: false,
-                tx_freq_min: 0,
-                tx_freq_max: 0,
+                tx_min_max_freqs: vec![],
                 tx_gain_table: vec![],
             },
         ],
         gps: match gps {
-            true => Gps::TtyPath(
-                conf.gateway
-                    .gnss_dev_path
-                    .clone()
-                    .unwrap_or("/dev/ttyAMA0".to_string()),
-            ),
-            false => Gps::None,
+            true => conf
+                .gateway
+                .get_gnss_dev_path(&gnss::Device::new("/dev/ttyAMA0")),
+            false => gnss::Device::None,
         },
         com_type: ComType::Spi,
-        com_path: conf
-            .gateway
-            .com_dev_path
-            .clone()
-            .unwrap_or("/dev/spidev0.0".to_string()),
-        i2c_path: Some(
-            conf.gateway
-                .i2c_dev_path
-                .clone()
-                .unwrap_or("/dev/i2c-1".to_string()),
-        ),
+        com_path: conf.gateway.get_com_dev_path("/dev/spidev0.0"),
+        i2c_path: Some(conf.gateway.get_i2c_dev_path("/dev/i2c-1")),
         i2c_temp_sensor_addr: Some(0x3b),
         sx1302_reset_pin: conf.gateway.get_sx1302_reset_pin("/dev/gpiochip0", 23),
         sx1302_power_en_pin: conf.gateway.get_sx1302_power_en_pin("/dev/gpiochip0", 18),

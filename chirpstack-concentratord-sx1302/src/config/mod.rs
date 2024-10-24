@@ -3,6 +3,7 @@ use std::{env, fmt, fs};
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
+use libconcentratord::gnss;
 use libconcentratord::regulation::{standard, tracker::Tracker};
 
 pub mod helpers;
@@ -105,7 +106,7 @@ pub struct Gateway {
     pub sx1261_reset_chip: Option<String>,
     pub sx1261_reset_pin: Option<u32>,
 
-    pub gnss_dev_path: Option<String>,
+    pub gnss_dev_path: Option<gnss::Device>,
     pub com_dev_path: Option<String>,
     pub i2c_dev_path: Option<String>,
 
@@ -181,6 +182,22 @@ impl Gateway {
             .unwrap_or(default_chip.to_string());
         let pin = self.sx1261_reset_pin.unwrap_or(default_pin);
         Some((chip, pin))
+    }
+
+    pub fn get_gnss_dev_path(&self, gnss_dev_path: &gnss::Device) -> gnss::Device {
+        self.gnss_dev_path.clone().unwrap_or(gnss_dev_path.clone())
+    }
+
+    pub fn get_com_dev_path(&self, com_dev_path: &str) -> String {
+        self.com_dev_path
+            .clone()
+            .unwrap_or(com_dev_path.to_string())
+    }
+
+    pub fn get_i2c_dev_path(&self, i2c_dev_path: &str) -> String {
+        self.i2c_dev_path
+            .clone()
+            .unwrap_or(i2c_dev_path.to_string())
     }
 }
 

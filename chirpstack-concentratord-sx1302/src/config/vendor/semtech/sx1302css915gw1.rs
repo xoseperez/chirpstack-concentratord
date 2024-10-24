@@ -1,16 +1,17 @@
 use anyhow::Result;
+use libconcentratord::{gnss, region};
 use libloragw_sx1302::hal;
 
 use super::super::super::super::config::{self, Region};
-use super::super::{ComType, Configuration, Gps, RadioConfig};
+use super::super::{ComType, Configuration, RadioConfig};
 
 // source: https://github.com/Lora-net/sx1302_hal/blob/master/packet_forwarder/global_conf.json.sx1250.US915.USB
 pub fn new(conf: &config::Configuration) -> Result<Configuration> {
     let region = conf.gateway.region.unwrap_or(Region::US915);
 
-    let (tx_freq_min, tx_freq_max) = match region {
-        Region::US915 => (923000000, 928000000),
-        Region::AU915 => (915000000, 928000000),
+    let tx_min_max_freqs = match region {
+        Region::US915 => region::us915::TX_MIN_MAX_FREQS.to_vec(),
+        Region::AU915 => region::au915::TX_MIN_MAX_FREQS.to_vec(),
         _ => return Err(anyhow!("Region is not supported: {}", region)),
     };
 
@@ -23,8 +24,7 @@ pub fn new(conf: &config::Configuration) -> Result<Configuration> {
         lora_multi_sf_bandwidth: 125000,
         radio_config: vec![
             RadioConfig {
-                tx_freq_min,
-                tx_freq_max,
+                tx_min_max_freqs,
                 enable: true,
                 radio_type: hal::RadioType::SX1250,
                 single_input_mode: true,
@@ -165,26 +165,18 @@ pub fn new(conf: &config::Configuration) -> Result<Configuration> {
                     coeff_e: 0.0,
                 },
                 tx_enable: false,
-                tx_freq_min: 0,
-                tx_freq_max: 0,
+                tx_min_max_freqs: vec![],
                 tx_gain_table: vec![],
             },
         ],
         gps: match gps {
-            true => Gps::TtyPath(
-                conf.gateway
-                    .gnss_dev_path
-                    .clone()
-                    .unwrap_or("/dev/ttyAMA0".to_string()),
-            ),
-            false => Gps::None,
+            true => conf
+                .gateway
+                .get_gnss_dev_path(&gnss::Device::new("/dev/ttyAMA0")),
+            false => gnss::Device::None,
         },
         com_type: ComType::Usb,
-        com_path: conf
-            .gateway
-            .com_dev_path
-            .clone()
-            .unwrap_or("/dev/ttyACM0".to_string()),
+        com_path: conf.gateway.get_com_dev_path("/dev/ttyACM0"),
         ..Default::default()
     })
 }

@@ -2,7 +2,8 @@ use anyhow::Result;
 use libloragw_sx1302::hal;
 
 use super::super::super::super::config::{self, Region};
-use super::super::{ComType, Configuration, Gps, RadioConfig};
+use super::super::{ComType, Configuration, RadioConfig};
+use libconcentratord::{gnss, region};
 
 // source: https://github.com/Lora-net/sx1302_hal/blob/master/packet_forwarder/
 // Note: At the time of implementation, Embit does not provide tx_gain_table values.
@@ -13,13 +14,13 @@ pub fn new(conf: &config::Configuration) -> Result<Configuration> {
         .region
         .ok_or_else(|| anyhow!("You must specify a region"))?;
 
-    let (tx_freq_min, tx_freq_max) = match region {
-        Region::AU915 => (915_000_000, 928_000_000),
-        Region::EU868 => (863_000_000, 870_000_000),
-        Region::IN865 => (865_000_000, 867_000_000),
-        Region::KR920 => (920_900_000, 923_300_000),
-        Region::RU864 => (863_000_000, 870_000_000),
-        Region::US915 => (923_000_000, 928_000_000),
+    let tx_min_max_freqs = match region {
+        Region::AU915 => region::au915::TX_MIN_MAX_FREQS.to_vec(),
+        Region::EU868 => region::eu868::TX_MIN_MAX_FREQS.to_vec(),
+        Region::IN865 => region::in865::TX_MIN_MAX_FREQS.to_vec(),
+        Region::KR920 => region::kr920::TX_MIN_MAX_FREQS.to_vec(),
+        Region::RU864 => region::ru864::TX_MIN_MAX_FREQS.to_vec(),
+        Region::US915 => region::us915::TX_MIN_MAX_FREQS.to_vec(),
         _ => return Err(anyhow!("Region not supported: {}", region)),
     };
 
@@ -167,8 +168,7 @@ pub fn new(conf: &config::Configuration) -> Result<Configuration> {
         lora_multi_sf_bandwidth: 125000,
         radio_config: vec![
             RadioConfig {
-                tx_freq_min,
-                tx_freq_max,
+                tx_min_max_freqs,
                 rssi_offset,
                 tx_gain_table,
                 enable: true,
@@ -196,34 +196,20 @@ pub fn new(conf: &config::Configuration) -> Result<Configuration> {
                     coeff_e: 0.0,
                 },
                 tx_enable: false,
-                tx_freq_min: 0,
-                tx_freq_max: 0,
+                tx_min_max_freqs: vec![],
                 tx_gain_table: vec![],
             },
         ],
-        gps: Gps::None,
+        gps: gnss::Device::None,
         com_type: match usb {
             true => ComType::Usb,
             false => ComType::Spi,
         },
         com_path: match usb {
-            true => conf
-                .gateway
-                .com_dev_path
-                .clone()
-                .unwrap_or("/dev/ttyACM0".to_string()),
-            false => conf
-                .gateway
-                .com_dev_path
-                .clone()
-                .unwrap_or("/dev/spidev0.0".to_string()),
+            true => conf.gateway.get_com_dev_path("/dev/ttyACM0"),
+            false => conf.gateway.get_com_dev_path("/dev/spidev0.0"),
         },
-        i2c_path: Some(
-            conf.gateway
-                .i2c_dev_path
-                .clone()
-                .unwrap_or("/dev/i2c-1".to_string()),
-        ),
+        i2c_path: Some(conf.gateway.get_i2c_dev_path("/dev/i2c-1")),
         i2c_temp_sensor_addr: Some(0x3B),
         sx1302_reset_pin: conf.gateway.get_sx1302_reset_pin("/dev/gpiochip0", 4),
         sx1302_power_en_pin: conf.gateway.get_sx1302_power_en_pin("/dev/gpiochip0", 17),

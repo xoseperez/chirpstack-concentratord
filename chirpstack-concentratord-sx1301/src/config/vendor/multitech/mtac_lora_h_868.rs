@@ -1,8 +1,10 @@
 use anyhow::Result;
+use libconcentratord::gnss;
 use libloragw_sx1301::hal;
 
 use super::super::super::super::config::{self, Region};
-use super::super::{Configuration, Gps};
+use super::super::Configuration;
+use libconcentratord::region;
 
 pub enum Port {
     AP1,
@@ -13,8 +15,8 @@ pub enum Port {
 pub fn new(conf: &config::Configuration) -> Result<Configuration> {
     let region = conf.gateway.region.unwrap_or(Region::EU868);
 
-    let radio_min_max_tx_freq = match region {
-        Region::EU868 => vec![(863000000, 870000000), (863000000, 870000000)],
+    let tx_min_max_freqs = match region {
+        Region::EU868 => region::eu868::TX_MIN_MAX_FREQS.to_vec(),
         _ => return Err(anyhow!("Region is not supported: {}", region)),
     };
 
@@ -28,7 +30,7 @@ pub fn new(conf: &config::Configuration) -> Result<Configuration> {
     let enforce_duty_cycle = conf.gateway.model_flags.contains(&"ENFORCE_DC".to_string());
 
     Ok(Configuration {
-        radio_min_max_tx_freq,
+        tx_min_max_freqs,
         enforce_duty_cycle,
         radio_count: 2,
         clock_source: 0,
@@ -168,12 +170,14 @@ pub fn new(conf: &config::Configuration) -> Result<Configuration> {
             },
         ],
         gps: match gps {
-            true => Gps::Gpsd,
-            false => Gps::None,
+            true => conf
+                .gateway
+                .get_gnss_dev_path(&gnss::Device::new("gpsd://localhost:2947")),
+            false => gnss::Device::None,
         },
         spidev_path: match port {
-            Port::AP1 => "/dev/spidev0.2".to_string(),
-            Port::AP2 => "/dev/spidev1.2".to_string(),
+            Port::AP1 => conf.gateway.get_com_dev_path("/dev/spidev0.2"),
+            Port::AP2 => conf.gateway.get_com_dev_path("/dev/spidev1.2"),
         },
         ..Default::default()
     })

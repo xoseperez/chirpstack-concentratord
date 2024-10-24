@@ -1,16 +1,17 @@
 use anyhow::Result;
+use libconcentratord::{gnss, region};
 use libloragw_sx1302::hal;
 
 use super::super::super::super::config::{self, Region};
-use super::super::{ComType, Configuration, Gps, RadioConfig};
+use super::super::{ComType, Configuration, RadioConfig};
 
 // source:
 // mPower FW (/opt/lora/global_conf.json.MTCAP3.EU868)
 pub fn new(conf: &config::Configuration) -> Result<Configuration> {
     let region = conf.gateway.region.unwrap_or(Region::EU868);
 
-    let (tx_freq_min, tx_freq_max) = match region {
-        Region::EU868 => (863_000_000, 870_000_000),
+    let tx_min_max_freqs = match region {
+        Region::EU868 => region::eu868::TX_MIN_MAX_FREQS.to_vec(),
         _ => return Err(anyhow!("Unsupported region: {}", region)),
     };
 
@@ -21,8 +22,7 @@ pub fn new(conf: &config::Configuration) -> Result<Configuration> {
         lora_multi_sf_bandwidth: 125000,
         radio_config: vec![
             RadioConfig {
-                tx_freq_min,
-                tx_freq_max,
+                tx_min_max_freqs,
                 enable: true,
                 radio_type: hal::RadioType::SX1250,
                 single_input_mode: true,
@@ -163,14 +163,13 @@ pub fn new(conf: &config::Configuration) -> Result<Configuration> {
                     coeff_e: 0.0,
                 },
                 tx_enable: false,
-                tx_freq_min: 0,
-                tx_freq_max: 0,
+                tx_min_max_freqs: vec![],
                 tx_gain_table: vec![],
             },
         ],
-        gps: Gps::None,
+        gps: gnss::Device::None,
         com_type: ComType::Spi,
-        com_path: "/dev/spidev1.0".to_string(),
+        com_path: conf.gateway.get_com_dev_path("/dev/spidev1.0"),
         reset_commands: Some(vec![
             (
                 "mts-io-sysfs".to_string(),
