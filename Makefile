@@ -18,6 +18,11 @@ build-armv7-unknown-linux-musleabihf:
 build-x86_64-unknown-linux-musl:
 	cross build --target x86_64-unknown-linux-musl --release
 
+build-mipsel-unknown-linux-musl:
+	# mipsel is a tier-3 target.
+	rustup toolchain add nightly-2025-02-14-x86_64-unknown-linux-gnu
+	cross +nightly-2025-02-14 build -Z build-std=std --target mipsel-unknown-linux-musl --release
+
 # Build distributable binaries for all targets.
 dist: dist-aarch64-unknown-linux-musl \
 	dist-armv5te-unknown-linux-musleabi \
@@ -90,6 +95,7 @@ version:
 	sed -i 's/^  version.*/  version = "$(VERSION)"/g' ./chirpstack-concentratord-sx1301/Cargo.toml
 	sed -i 's/^  version.*/  version = "$(VERSION)"/g' ./chirpstack-concentratord-sx1302/Cargo.toml
 	sed -i 's/^  version.*/  version = "$(VERSION)"/g' ./gateway-id/Cargo.toml
+	sed -i 's/^  version.*/  version = "$(VERSION)"/g' ./gateway-location/Cargo.toml
 	sed -i 's/^  version.*/  version = "$(VERSION)"/g' ./libconcentratord/Cargo.toml
 	make test
 	git add .
@@ -109,3 +115,7 @@ test:
 # Enter the devshell.
 devshell:
 	nix-shell
+
+# Dependencies
+dev-dependencies:
+	cargo install cross --git https://github.com/cross-rs/cross --rev c7dee4d008475ce1c140773cbcd6078f4b86c2aa --locked

@@ -1,7 +1,7 @@
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use anyhow::Result;
-use chirpstack_api::gw;
+use chirpstack_api::{gw, prost_types};
 use libconcentratord::jitqueue;
 use libloragw_sx1302::hal;
 use rand::Rng;
@@ -65,8 +65,8 @@ pub fn uplink_to_proto(
     packet: &hal::RxPacket,
     time_fallback: bool,
 ) -> Result<gw::UplinkFrame> {
-    let mut rng = rand::thread_rng();
-    let uplink_id: u32 = rng.gen();
+    let mut rng = rand::rng();
+    let uplink_id: u32 = rng.random();
 
     let time_since_gps_epoch = match gps::cnt2epoch(packet.count_us) {
         Ok(v) => Some(prost_types::Duration {
@@ -116,7 +116,7 @@ pub fn uplink_to_proto(
                     hal::Modulation::FSK => {
                         Some(gw::modulation::Parameters::Fsk(gw::FskModulationInfo {
                             datarate: match packet.datarate {
-                                hal::DataRate::FSK(v) => v * 1000,
+                                hal::DataRate::FSK(v) => v,
                                 _ => return Err(anyhow!("unexpected datarate")),
                             },
                             ..Default::default()
@@ -333,7 +333,7 @@ pub fn downlink_to_tx_info_proto(packet: &hal::TxPacket) -> Result<gw::DownlinkT
                 hal::Modulation::FSK => {
                     Some(gw::modulation::Parameters::Fsk(gw::FskModulationInfo {
                         datarate: match packet.datarate {
-                            hal::DataRate::FSK(v) => v * 1000,
+                            hal::DataRate::FSK(v) => v,
                             _ => return Err(anyhow!("unexpected datarate")),
                         },
                         ..Default::default()

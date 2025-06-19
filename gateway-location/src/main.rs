@@ -23,9 +23,7 @@ fn main() {
 
     // Send command.
     let cmd = gw::Command {
-        command: Some(gw::command::Command::GetGatewayId(
-            gw::GetGatewayIdRequest {},
-        )),
+        command: Some(gw::command::Command::GetLocation(gw::GetLocationRequest {})),
     };
     zmq_sock.send(cmd.encode_to_vec(), 0).unwrap();
 
@@ -39,7 +37,7 @@ fn main() {
 
     // Read response.
     let b = zmq_sock.recv_bytes(0).unwrap();
-    let resp = gw::GetGatewayIdResponse::decode(b.as_slice()).unwrap();
-    println!("{}", resp.gateway_id);
+    let resp = gw::GetLocationResponse::decode(b.as_slice()).unwrap();
+    println!("{:?}", resp);
     exit(0);
 }

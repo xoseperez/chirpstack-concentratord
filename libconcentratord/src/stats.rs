@@ -1,14 +1,14 @@
 use std::collections::HashMap;
-use std::sync::Mutex;
+use std::sync::{LazyLock, Mutex};
 use std::time::SystemTime;
 
 use anyhow::Result;
+use chirpstack_api::prost_types;
 
 use super::events;
 
-lazy_static! {
-    static ref STATS: Mutex<chirpstack_api::gw::GatewayStats> = Mutex::new(Default::default());
-}
+static STATS: LazyLock<Mutex<chirpstack_api::gw::GatewayStats>> =
+    LazyLock::new(|| Mutex::new(Default::default()));
 
 pub fn inc_rx_counts(pl: &chirpstack_api::gw::UplinkFrame) {
     let mut stats = STATS.lock().unwrap();
@@ -101,7 +101,7 @@ pub fn send_and_reset(
     stats.duty_cycle_stats = duty_cycle_stats;
     stats.metadata.clone_from(metadata);
 
-    events::send_stats(&stats).unwrap();
+    events::send_stats(stats.clone()).unwrap();
 
     // reset stats
     *stats = Default::default();

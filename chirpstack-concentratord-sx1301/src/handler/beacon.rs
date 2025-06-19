@@ -71,7 +71,7 @@ fn send_beacon(
     beacon_time: Duration,
     queue: &Arc<Mutex<jitqueue::Queue<wrapper::TxPacket>>>,
 ) -> Result<()> {
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
 
     let mut beacon_pl = get_beacon(conf.compulsory_rfu_size, beacon_time);
     let data_size = beacon_pl.len();
@@ -86,10 +86,7 @@ fn send_beacon(
     let tx_packet = hal::TxPacket {
         freq_hz: tx_freq,
         tx_mode: hal::TxMode::OnGPS,
-        count_us: match gps::epoch2cnt(&beacon_time) {
-            Ok(v) => v,
-            Err(err) => return Err(err),
-        },
+        count_us: gps::epoch2cnt(&beacon_time)?,
         rf_chain: 0,
         rf_power: conf.tx_power as i8,
         modulation: hal::Modulation::LoRa,
@@ -112,7 +109,7 @@ fn send_beacon(
         size: data_size as u16,
         payload: data,
     };
-    let tx_packet = wrapper::TxPacket::new(rng.gen(), tx_packet);
+    let tx_packet = wrapper::TxPacket::new(rng.random(), tx_packet);
 
     queue
         .lock()

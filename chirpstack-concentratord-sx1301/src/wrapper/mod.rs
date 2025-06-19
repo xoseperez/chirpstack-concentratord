@@ -1,7 +1,7 @@
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use anyhow::Result;
-use chirpstack_api::gw;
+use chirpstack_api::{gw, prost_types};
 use libconcentratord::jitqueue;
 use libloragw_sx1301::hal;
 use rand::Rng;
@@ -65,7 +65,7 @@ pub fn uplink_to_proto(
     packet: &hal::RxPacket,
     time_fallback: bool,
 ) -> Result<gw::UplinkFrame> {
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
 
     // tx info
     let mut tx_info = gw::UplinkTxInfo {
@@ -103,7 +103,7 @@ pub fn uplink_to_proto(
             tx_info.modulation = Some(gw::Modulation {
                 parameters: Some(gw::modulation::Parameters::Fsk(gw::FskModulationInfo {
                     datarate: match packet.datarate {
-                        hal::DataRate::FSK(v) => v * 1000,
+                        hal::DataRate::FSK(v) => v,
                         _ => return Err(anyhow!("unexpected datarate")),
                     },
                     ..Default::default()
@@ -117,7 +117,7 @@ pub fn uplink_to_proto(
 
     // rx info
     let mut rx_info = gw::UplinkRxInfo {
-        uplink_id: rng.gen(),
+        uplink_id: rng.random(),
         context: packet.count_us.to_be_bytes().to_vec(),
         gateway_id: hex::encode(gateway_id),
         rssi: packet.rssi as i32,
@@ -345,7 +345,7 @@ pub fn downlink_to_tx_info_proto(packet: &hal::TxPacket) -> Result<gw::DownlinkT
             tx_info.modulation = Some(gw::Modulation {
                 parameters: Some(gw::modulation::Parameters::Fsk(gw::FskModulationInfo {
                     datarate: match packet.datarate {
-                        hal::DataRate::FSK(v) => v * 1000,
+                        hal::DataRate::FSK(v) => v,
                         _ => return Err(anyhow!("unexpected datarate")),
                     },
                     ..Default::default()

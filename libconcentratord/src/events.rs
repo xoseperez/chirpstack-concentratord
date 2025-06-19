@@ -1,14 +1,12 @@
-use std::sync::Mutex;
+use std::sync::{LazyLock, Mutex};
 
 use anyhow::Result;
+use chirpstack_api::{gw, prost::Message};
 use log::info;
-use prost::Message;
 
 use super::socket::ZMQ_CONTEXT;
 
-lazy_static! {
-    static ref ZMQ_PUB: Mutex<Option<zmq::Socket>> = Mutex::new(None);
-}
+static ZMQ_PUB: LazyLock<Mutex<Option<zmq::Socket>>> = LazyLock::new(|| Mutex::new(None));
 
 pub fn bind_socket(bind: &str) -> Result<()> {
     info!("Creating socket for publishing events, bind: {}", bind);
@@ -24,26 +22,36 @@ pub fn bind_socket(bind: &str) -> Result<()> {
     Ok(())
 }
 
-pub fn send_uplink(pl: &chirpstack_api::gw::UplinkFrame) -> Result<()> {
+pub fn send_uplink(pl: chirpstack_api::gw::UplinkFrame) -> Result<()> {
     let pub_guard = ZMQ_PUB.lock().unwrap();
     let publisher = pub_guard.as_ref().unwrap();
 
-    let b = pl.encode_to_vec();
-    publisher.send("up", zmq::SNDMORE).unwrap();
-    publisher.send(b, 0).unwrap();
+    let event = gw::Event {
+        event: Some(gw::event::Event::UplinkFrame(pl)),
+    };
+
+    publisher.send(event.encode_to_vec(), 0).unwrap();
 
     Ok(())
 }
 
-pub fn send_stats(stats: &chirpstack_api::gw::GatewayStats) -> Result<()> {
+pub fn send_stats(stats: chirpstack_api::gw::GatewayStats) -> Result<()> {
     let pub_guard = ZMQ_PUB.lock().unwrap();
     let publisher = pub_guard.as_ref().unwrap();
 
-    info!("Publishing stats event, rx_received: {}, rx_received_ok: {}, tx_received: {}, tx_emitted: {}", stats.rx_packets_received, stats.rx_packets_received_ok, stats.tx_packets_received, stats.tx_packets_emitted);
+    info!(
+        "Publishing stats event, rx_received: {}, rx_received_ok: {}, tx_received: {}, tx_emitted: {}",
+        stats.rx_packets_received,
+        stats.rx_packets_received_ok,
+        stats.tx_packets_received,
+        stats.tx_packets_emitted
+    );
 
-    let b = stats.encode_to_vec();
-    publisher.send("stats", zmq::SNDMORE).unwrap();
-    publisher.send(b, 0).unwrap();
+    let event = gw::Event {
+        event: Some(gw::event::Event::GatewayStats(stats)),
+    };
+
+    publisher.send(event.encode_to_vec(), 0).unwrap();
 
     Ok(())
 }

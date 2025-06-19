@@ -1,7 +1,7 @@
 use std::time::{Duration, SystemTime};
 
 use anyhow::Result;
-use chirpstack_api::gw;
+use chirpstack_api::{gw, prost_types};
 use libconcentratord::jitqueue;
 use libloragw_2g4::hal;
 use rand::Rng;
@@ -68,7 +68,7 @@ pub fn uplink_to_proto(
     packet: &hal::RxPacket,
     time_fallback: bool,
 ) -> Result<gw::UplinkFrame> {
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
 
     Ok(gw::UplinkFrame {
         phy_payload: packet.payload[..packet.size as usize].to_vec(),
@@ -106,7 +106,7 @@ pub fn uplink_to_proto(
             }),
         }),
         rx_info: Some(gw::UplinkRxInfo {
-            uplink_id: rng.gen(),
+            uplink_id: rng.random(),
             context: packet.count_us.to_be_bytes().to_vec(),
             gateway_id: hex::encode(gateway_id),
             rssi: packet.rssi as i32,
