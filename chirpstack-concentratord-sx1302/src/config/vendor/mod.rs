@@ -3,6 +3,7 @@ use libloragw_sx1302::hal;
 
 pub mod dragino;
 pub mod embit;
+pub mod miromico;
 pub mod multitech;
 pub mod rak;
 pub mod seeed;
@@ -38,7 +39,6 @@ pub struct Configuration {
 
 #[derive(Clone)]
 pub struct RadioConfig {
-    pub enable: bool,
     pub radio_type: hal::RadioType,
     pub single_input_mode: bool,
     pub rssi_offset: f32,

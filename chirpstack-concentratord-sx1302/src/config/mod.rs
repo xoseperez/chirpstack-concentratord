@@ -89,7 +89,7 @@ pub struct Gateway {
     pub region: Option<Region>,
     pub model: String,
     pub model_flags: Vec<String>,
-    pub gateway_id: Option<String>,
+    pub gateway_id: String,
 
     pub time_fallback_enabled: bool,
     pub concentrator: Concentrator,
@@ -127,7 +127,7 @@ impl Default for Gateway {
             region: None,
             model: "".into(),
             model_flags: vec![],
-            gateway_id: None,
+            gateway_id: "".into(),
             time_fallback_enabled: false,
             concentrator: Concentrator::default(),
             beacon: Beacon::default(),
@@ -327,8 +327,8 @@ pub fn get(filenames: Vec<String>) -> Configuration {
     let mut config: Configuration = toml::from_str(&content).expect("Error parsing config file");
 
     // decode gateway id
-    if let Some(gateway_id) = &config.gateway.gateway_id {
-        let bytes = hex::decode(gateway_id).expect("Could not decode gateway_id");
+    if !config.gateway.gateway_id.is_empty() {
+        let bytes = hex::decode(&config.gateway.gateway_id).expect("Could not decode gateway_id");
         if bytes.len() != 8 {
             panic!("gateway_id must be exactly 8 bytes");
         }
@@ -340,6 +340,8 @@ pub fn get(filenames: Vec<String>) -> Configuration {
     config.gateway.model_config = match config.gateway.model.as_ref() {
         "dragino_pg1302" => vendor::dragino::pg1302::new(&config).unwrap(),
         "embit_emb_lr1302_mpcie" => vendor::embit::emb_lr1302_mpcie::new(&config).unwrap(),
+        "miromico_gwc_02_lw_868" => vendor::miromico::gwc_02_lw_868::new(&config).unwrap(),
+        "miromico_gwc_02_lw_915" => vendor::miromico::gwc_02_lw_915::new(&config).unwrap(),
         "multitech_mtac_003e00" => vendor::multitech::mtac_003e00::new(&config).unwrap(),
         "multitech_mtac_003u00" => vendor::multitech::mtac_003u00::new(&config).unwrap(),
         "multitech_mtcap3_003e00" => vendor::multitech::mtcap3_003e00::new(&config).unwrap(),
