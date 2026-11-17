@@ -13,22 +13,22 @@
   ]
 
   [workspace.dependencies]
-    chirpstack_api = { version = "4.15", default-features = false }
+    chirpstack_api = { version = "4.17", default-features = false }
     serde = { version = "1.0", features = ["derive"] }
     serde_json = "1.0"
-    toml = { version = "0.9", default-features = false, features = [
+    toml = { version = "1.1", default-features = false, features = [
       "std",
       "parse",
       "serde",
     ] }
-    clap = { version = "4.5", default-features = false, features = [
+    clap = { version = "4.6", default-features = false, features = [
       "std",
       "help",
       "usage",
       "derive",
     ] }
     log = "0.4"
-    simple_logger = { version = "5.0", default-features = false, features = [
+    simple_logger = { version = "5.2", default-features = false, features = [
       "timestamps",
     ] }
     zmq = "0.10"
@@ -36,10 +36,15 @@
     chrono = { version = "0.4", default-features = false, features = ["now"] }
     humantime-serde = "1.1"
     syslog = "7.0"
-    signal-hook = "0.3"
-    handlebars = "6.3"
-    getrandom = "0.3"
+    signal-hook = "0.4"
+    handlebars = "6.4"
+    getrandom = { version = "0.4", features = ["std"] }
     anyhow = "1.0"
     thiserror = "2.0"
     bindgen = "0.72"
-    gpiocdev = { version = "0.7", features = ["uapi_v1"] }
+    gpiocdev = { version = "0.8", features = ["uapi_v1"] }
+    nmea = { version = "0.7", default-features = false, features = [
+      "std",
+      "GNSS",
+    ] }
+    ublox = { version = "0.10" }

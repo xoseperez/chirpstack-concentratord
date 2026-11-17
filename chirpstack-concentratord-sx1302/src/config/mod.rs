@@ -77,7 +77,8 @@ impl Default for Api {
 pub struct Location {
     pub latitude: f64,
     pub longitude: f64,
-    pub altitude: i16,
+    #[serde(default)]
+    pub altitude: f32,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -94,6 +95,7 @@ pub struct Gateway {
     pub time_fallback_enabled: bool,
     pub concentrator: Concentrator,
     pub beacon: Beacon,
+    pub lbt: Lbt,
     pub location: Location,
 
     pub fine_timestamp: FineTimestamp,
@@ -110,6 +112,7 @@ pub struct Gateway {
     pub gnss_dev_path: Option<gnss::Device>,
     pub com_dev_path: Option<String>,
     pub i2c_dev_path: Option<String>,
+    pub sx1261_dev_path: Option<String>,
 
     #[serde(skip)]
     pub gateway_id_bytes: Option<[u8; 8]>,
@@ -131,6 +134,7 @@ impl Default for Gateway {
             time_fallback_enabled: false,
             concentrator: Concentrator::default(),
             beacon: Beacon::default(),
+            lbt: Lbt::default(),
             location: Location::default(),
             fine_timestamp: FineTimestamp::default(),
             sx1302_reset_chip: None,
@@ -142,6 +146,7 @@ impl Default for Gateway {
             gateway_id_bytes: None,
             gnss_dev_path: None,
             com_dev_path: None,
+            sx1261_dev_path: None,
             i2c_dev_path: None,
             model_config: vendor::Configuration::default(),
             config_version: "".into(),
@@ -199,6 +204,12 @@ impl Gateway {
             .unwrap_or(com_dev_path.to_string())
     }
 
+    pub fn get_sx1261_dev_path(&self, sx1261_dev_path: &str) -> String {
+        self.sx1261_dev_path
+            .clone()
+            .unwrap_or(sx1261_dev_path.to_string())
+    }
+
     pub fn get_i2c_dev_path(&self, i2c_dev_path: &str) -> String {
         self.i2c_dev_path
             .clone()
@@ -246,7 +257,24 @@ pub struct Beacon {
     pub tx_power: u32,
 }
 
+#[derive(Default, Serialize, Deserialize, Debug, PartialEq, Clone)]
+#[serde(default)]
+pub struct Lbt {
+    pub enable: bool,
+    pub rssi_target: i8,
+    pub channels: Vec<LbtChannel>,
+}
+
+#[derive(Default, Serialize, Deserialize, Debug, PartialEq, Clone)]
+pub struct LbtChannel {
+    pub frequency: u32,
+    pub bandwidth: u32,
+    pub scan_time_us: u32,
+    pub transmit_time_ms: u16,
+}
+
 #[derive(Serialize, Deserialize)]
+#[serde(default)]
 pub struct FineTimestamp {
     pub enable: bool,
     pub mode: String, // HIGH_CAPACITY or ALL_SF
@@ -339,6 +367,7 @@ pub fn get(filenames: Vec<String>) -> Configuration {
     // get model configuration
     config.gateway.model_config = match config.gateway.model.as_ref() {
         "dragino_pg1302" => vendor::dragino::pg1302::new(&config).unwrap(),
+        "elecrow_lr1302" => vendor::elecrow::lr1302::new(&config).unwrap(),
         "embit_emb_lr1302_mpcie" => vendor::embit::emb_lr1302_mpcie::new(&config).unwrap(),
         "miromico_gwc_02_lw_868" => vendor::miromico::gwc_02_lw_868::new(&config).unwrap(),
         "miromico_gwc_02_lw_915" => vendor::miromico::gwc_02_lw_915::new(&config).unwrap(),

@@ -1,4 +1,4 @@
-{ pkgs ? import (fetchTarball "https://github.com/NixOS/nixpkgs/archive/nixos-25.05.tar.gz") {} }:
+{ pkgs ? import (fetchTarball "https://github.com/NixOS/nixpkgs/archive/nixos-25.11.tar.gz") {} }:
 
 pkgs.mkShell {
   nativeBuildInputs = [
@@ -10,11 +10,12 @@ pkgs.mkShell {
     # cargo-cross can be used once version > 0.2.5, as 0.2.5 does not work well
     # with nightly toolchain. It is for now installed through make dev-dependencies.
     # pkgs.cargo-cross
+    pkgs.cargo-deb
     pkgs.jq
     pkgs.opkg-utils
   ];
   shellHook = ''
-    export PATH=$PATH:~/.cargo/bin
+    export PATH=$PWD/.cargo/bin:$PATH
   '';
   DOCKER_BUILDKIT = "1";
   NIX_STORE = "/nix/store";

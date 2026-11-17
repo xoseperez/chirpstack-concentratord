@@ -2,7 +2,7 @@ use anyhow::Result;
 use libloragw_sx1302::hal;
 
 use super::super::super::super::config::{self, Region};
-use super::super::{ComType, Configuration, RadioConfig};
+use super::super::{ComType, Configuration, RadioConfig, SX1261Config};
 use libconcentratord::{gnss, region};
 
 pub enum Port {
@@ -177,7 +177,11 @@ pub fn new(conf: &config::Configuration) -> Result<Configuration> {
                 tx_gain_table: vec![],
             },
         ],
-        gps: match gps {
+        sx1261_config: SX1261Config {
+            enable: true,
+            rssi_offset: 0,
+        },
+        gnss: match gps {
             true => conf
                 .gateway
                 .get_gnss_dev_path(&gnss::Device::new("gpsd://localhost:2947")),

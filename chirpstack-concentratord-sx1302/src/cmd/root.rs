@@ -33,12 +33,13 @@ pub fn run(
     concentrator::board_setconf(config)?;
     concentrator::timestamp_setconf(config)?;
     concentrator::txgain_setconf(config)?;
+    concentrator::sx1261_setconf(config)?;
     concentrator::rxrf_setconf(config)?;
     concentrator::rxif_setconf(config)?;
     concentrator::start()?;
 
     // setup static location
-    handler::gps::set_static_gps_coords(
+    gnss::set_static_location(
         config.gateway.location.latitude,
         config.gateway.location.longitude,
         config.gateway.location.altitude,
@@ -47,8 +48,7 @@ pub fn run(
     // get concentrator eui
     let gateway_id = if let Some(gateway_id) = config.gateway.gateway_id_bytes {
         gateway_id
-    }
-    else {
+    } else {
         concentrator::get_eui().unwrap()
     };
 
@@ -176,10 +176,10 @@ pub fn run(
         }
     }));
 
-    if config.gateway.model_config.gps != gnss::Device::None {
+    if config.gateway.model_config.gnss != gnss::Device::None {
         // gps thread
         threads.push(thread::spawn({
-            let gps = config.gateway.model_config.gps.clone();
+            let gps = config.gateway.model_config.gnss.clone();
             let stop_receive = signal_pool.new_receiver();
             let stop_send = stop_send.clone();
 
@@ -190,15 +190,6 @@ pub fn run(
                 }
 
                 debug!("GPS loop ended")
-            }
-        }));
-
-        // gps validate thread
-        threads.push(thread::spawn({
-            let stop_receive = signal_pool.new_receiver();
-
-            move || {
-                handler::gps::gps_validate_loop(stop_receive);
             }
         }));
 
