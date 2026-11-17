@@ -1,0 +1,139 @@
+name: Fork release
+
+# Builds this fork's v<upstream version>-r<n> tags into a draft GitHub Release,
+# e.g. v4.7.1-r1 is the first fork release based on upstream v4.7.1. Upstream's
+# dist job publishes to its S3 bucket, which this repository has no credentials
+# for. main.yml calls this once its tests have passed. The build steps mirror
+# upstream's dist job: port upstream changes to them here.
+on:
+  workflow_call:
+
+jobs:
+  dist:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      matrix:
+        target:
+          - aarch64-unknown-linux-musl
+          - armv5te-unknown-linux-musleabi
+          - armv7-unknown-linux-musleabihf
+          - x86_64-unknown-linux-musl
+    env:
+      TAG: ${{ github.ref_name }}
+    steps:
+      -
+        name: Checkout
+        uses: actions/checkout@v6
+      -
+        name: Set fork version
+        # Tag v4.7.1-r1 becomes crate version 4.7.1+r1. As semver build metadata
+        # it gives the Debian version 4.7.1+r1-1, which dpkg (and opkg, for the
+        # vendor .ipk packages) sorts above upstream's 4.7.1-1; a "-r1"
+        # pre-release would sort below it. The workspace root has no version, so
+        # each crate that shares the release version is bumped.
+        run: |
+          if ! [[ "$TAG" =~ ^v([0-9]+\.[0-9]+\.[0-9]+)-(r[0-9]+)$ ]]; then
+            echo "::error::Tag $TAG does not match v<major>.<minor>.<patch>-r<n>"
+            exit 1
+          fi
+          BASE="${BASH_REMATCH[1]}"
+          VERSION="$BASE+${BASH_REMATCH[2]}"
+          for f in chirpstack-concentratord-sx1301 chirpstack-concentratord-sx1302 chirpstack-concentratord-2g4 gateway-id gateway-location libconcentratord; do
+            CURRENT=$(sed -n '/^\s*\[package\]/,/^\s*\[/ s/^\s*version = "\(.*\)"/\1/p' "$f/Cargo.toml")
+            if [ "$CURRENT" != "$BASE" ]; then
+              echo "::error::Tag $TAG is for upstream $BASE, but $f is at $CURRENT"
+              exit 1
+            fi
+            sed -i "/^\s*\[package\]/,/^\s*\[/ s/^\(\s*version = \)\"${BASE//./\\.}\"/\1\"$VERSION\"/" "$f/Cargo.toml"
+          done
+          grep -n "\"$VERSION\"" -- */Cargo.toml
+      -
+        name: Install Nix
+        uses: cachix/install-nix-action@v31
+        with:
+          nix_path: nixpkgs=channel:nixos-25.11
+      -
+        name: Cargo cache
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-dist-${{ matrix.target }}-${{ hashFiles('**/Cargo.lock') }}
+      -
+        name: Install dev dependencies
+        run: nix-shell --command "make dev-dependencies"
+      -
+        name: Build distributables
+        run: nix-shell --command "make dist-${{ matrix.target }}"
+      -
+        name: Rename packages
+        # Release assets are one flat list, but the vendor .ipk packages sit in
+        # dist/vendor/<vendor>/<model>/ and two models can share a file name
+        # (multitech conduit and conduit-ap), so those get the vendor and model
+        # as a prefix. Files are named after the tag (4.7.1-r1) rather than
+        # 4.7.1+r1: a "+" in a release asset URL gets URL-encoded. dpkg and opkg
+        # order packages by the version inside them, not the file name.
+        run: |
+          VERSION="${TAG#v}"
+          PLUS="${VERSION/-r/+r}"
+          mkdir -p release
+          while IFS= read -r f; do
+            rel="${f#dist/}"; dir="$(dirname "$rel")"; name="$(basename "$rel")"
+            name="${name//"$PLUS"/$VERSION}"
+            case "$name" in *.deb) name="${name%%_*}_${VERSION}_${name##*_}" ;; esac
+            [ "$dir" = "." ] || { prefix="${dir#vendor/}"; name="${prefix//\//-}_$name"; }
+            if [ -e "release/$name" ]; then echo "::error::Two packages would both be released as $name"; exit 1; fi
+            cp -v "$f" "release/$name"
+          done < <(find dist -type f | sort)
+      -
+        name: Upload distributables
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-${{ matrix.target }}
+          path: release/*
+          if-no-files-found: error
+
+  release:
+    needs: dist
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      TAG: ${{ github.ref_name }}
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      -
+        name: Download distributables
+        uses: actions/download-artifact@v4
+        with:
+          pattern: dist-*
+          path: dist
+          merge-multiple: true
+      -
+        name: Checksums
+        run: |
+          cd dist
+          sha256sum -- * > SHA256SUMS
+          cat SHA256SUMS
+      -
+        name: Create draft release
+        # A draft, so the notes and assets can be reviewed before publishing.
+        # Re-running replaces the assets.
+        run: |
+          BASE="${TAG%-r*}"
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            gh release upload "$TAG" dist/* --clobber
+          else
+            gh release create "$TAG" dist/* \
+              --draft \
+              --verify-tag \
+              --title "$TAG" \
+              --notes "Based on upstream ChirpStack Concentratord [$BASE](https://github.com/chirpstack/chirpstack-concentratord/releases/tag/$BASE)."
+          fi
