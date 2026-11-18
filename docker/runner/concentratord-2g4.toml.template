@@ -1,0 +1,52 @@
+# Concentratord configuration for SX1280 (2.4 GHz) concentrators. Concentratord
+# reads the ISM2400 region and channel files after this one.
+
+[concentratord]
+
+  # Log level.
+  #
+  # Valid options are:
+  #   * TRACE
+  #   * DEBUG
+  #   * INFO
+  #   * WARN
+  #   * ERROR
+  log_level="${LOGGING_LEVEL}"
+
+  # Log to syslog.
+  #
+  # When set to true, log messages are being written to syslog instead of stdout.
+  log_to_syslog=false
+
+  # Statistics interval.
+  stats_interval="30s"
+
+  # Configuration for the (ZeroMQ based) API.
+  [concentratord.api]
+
+    # Event PUB socket bind.
+    event_bind="ipc:///tmp/${SOCKET_NAME}_event"
+
+    # Command REP socket bind.
+    command_bind="ipc:///tmp/${SOCKET_NAME}_command"
+
+
+# LoRa gateway configuration.
+[gateway]
+
+  # Antenna gain (dBi).
+  antenna_gain=0
+
+  # Public LoRaWAN network.
+  lorawan_public=true
+
+  # Gateway vendor / model.
+  model="${MODEL}"
+
+  # Gateway vendor / model flags.
+  model_flags=${MODEL_FLAGS}
+
+  # Gateway ID.
+  #
+  # Only set this to override the Gateway ID provided by the concentrator.
+  gateway_id="${GATEWAY_EUI}"

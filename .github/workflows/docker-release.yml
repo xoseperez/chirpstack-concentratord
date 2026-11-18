@@ -1,0 +1,108 @@
+name: Docker release
+
+# Builds, tests and pushes the Docker image for a fork release
+# (v<upstream version>-r<n>), from that release's tarballs.
+#
+# It runs when the draft created by fork-release.yml is published, so reviewing
+# that draft also gates the image. A release created with the workflow token
+# cannot trigger this; publishing it by hand does. It can also be run by hand for
+# any existing release, including ones tagged before docker/ existed.
+#
+# The docker/ files come from the commit this workflow runs on: the tag for a
+# published release, the chosen branch for a manual run. Files the image takes
+# from the rest of the repo (configs) always come from the tag, so they match
+# the binaries.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag, e.g. v4.3.1-r1
+        required: true
+      replace:
+        description: Replace the image if this version is already on Docker Hub
+        type: boolean
+        default: false
+
+jobs:
+  docker:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      TAG: ${{ github.event.release.tag_name || inputs.tag }}
+      REPLACE: ${{ inputs.replace || false }}
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      -
+        name: Checkout
+        uses: actions/checkout@v7
+        with:
+          # All tags: to find the newest release and to check out the tag's files.
+          fetch-depth: 0
+      -
+        name: Versions
+        run: |
+          if ! [[ "$TAG" =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)-r[0-9]+$ ]]; then
+            echo "::error::Tag $TAG does not match v<major>.<minor>.<patch>-r<n>"
+            exit 1
+          fi
+          MAJOR="${BASH_REMATCH[1]}"
+          MINOR="$MAJOR.${BASH_REMATCH[2]}"
+          PATCH="$MINOR.${BASH_REMATCH[3]}"
+          # Rebuilding an older release must not move the floating tags back. The
+          # pattern leaves out upstream pre-releases such as v4.0.0-rc.1.
+          NEWEST=$(git tag -l | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+-r[0-9]+$' | sort -V | tail -n1)
+          EXTRA_TAGS=""
+          if [ "$TAG" = "$NEWEST" ]; then EXTRA_TAGS="$PATCH,$MINOR,$MAJOR,latest"; fi
+          {
+            echo "VERSION=${TAG#v}"
+            echo "EXTRA_TAGS=$EXTRA_TAGS"
+            echo "REVISION=$(git rev-parse "$TAG^{commit}")"
+          } >> "$GITHUB_ENV"
+          echo "Image tags: ${TAG#v} $EXTRA_TAGS"
+          echo "Binaries and configs from $TAG, docker/ from $(git rev-parse --short HEAD)"
+      -
+        name: Files of the tag
+        # Inside the workspace: bake refuses to read build inputs from outside
+        # the directory it runs in unless each path is allowed explicitly.
+        run: |
+          git worktree add --detach .release-source "$TAG"
+          echo "SOURCE=.release-source" >> "$GITHUB_ENV"
+      -
+        name: Download release tarballs
+        run: |
+          gh release download "$TAG" --dir dist \
+            --pattern 'chirpstack-*.tar.gz' --pattern SHA256SUMS
+          (cd dist && sha256sum -c --ignore-missing SHA256SUMS)
+      -
+        uses: docker/setup-qemu-action@v4
+      -
+        uses: docker/setup-buildx-action@v4
+      -
+        uses: docker/login-action@v4
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      -
+        name: Check the version is new
+        if: env.REPLACE != 'true'
+        run: |
+          IMAGE=$(docker buildx bake -f docker/docker-bake.hcl --print | jq -r '.target.default.tags[0]')
+          if docker buildx imagetools inspect "$IMAGE" > /dev/null 2>&1; then
+            echo "::error::$IMAGE is already published. To rebuild it, run this by hand with 'replace' ticked."
+            exit 1
+          fi
+      -
+        name: Smoke test
+        run: |
+          for platform in linux/amd64 linux/arm64 linux/arm/v7; do
+            docker buildx bake -f docker/docker-bake.hcl --load \
+              --set "*.platform=$platform" --set "*.tags=smoke:latest"
+            docker/smoke-test.sh smoke:latest "$platform"
+          done
+      -
+        name: Build and push
+        run: docker buildx bake -f docker/docker-bake.hcl --push

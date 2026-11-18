@@ -1,0 +1,70 @@
+services:
+
+  chirpstack-concentratord:
+
+    container_name: chirpstack-concentratord
+    image: xoseperez/chirpstack-concentratord
+    restart: unless-stopped
+
+    # Needed by SX1301 concentrators to derive a stable gateway EUI from the
+    # host's MAC address, unless GATEWAY_EUI is set
+    #network_mode: host
+
+    # IPC sockets shared with the forwarder or mesh services
+    volumes:
+      - /tmp:/tmp
+
+    # Access to the concentrator, instead of running privileged
+    devices:
+      - /dev/ttyACM0        # USB concentrators
+    #  - /dev/spidev0.0     # SPI concentrators
+      - /dev/gpiochip0      # reset and power-enable GPIOs
+
+    group_add:
+      - "dialout"           # USB concentrators
+    #  - ${PGID_GPIO:-997}  # GPIOs
+    #  - ${PGID_I2C:-998}
+    #  - ${PGID_SPI:-999}   # SPI concentrators
+
+    environment:
+
+      # Concentrator model (required, either RAK or chirpstack-concentratord naming)
+      MODEL: "RAK5146"
+
+      # Interface the concentrator uses (defaults to "SPI", "USB" only supported for SX1302/3 devices)
+      INTERFACE: "USB"
+
+      # Drive the reset and power-enable GPIOs of USB concentrators with libgpiod
+      # (needs the /dev/gpiochipN device above) instead of sysfs
+      USE_LIBGPIOD: 1
+
+      # Reset GPIO (SPI: defaults to the model's own; USB: none)
+      RESET_GPIO: 12
+
+      # Level that holds the concentrator in reset (USB only)
+      RESET_ACTIVE: 0
+
+      # GPIO chip of the reset and power-enable lines
+      #GPIO_CHIP: "gpiochip0"
+
+      # Power enable GPIO
+      #POWER_EN_GPIO: 0
+
+      # Set to 1 if concentrator has built-in GPS (set by default for some known concentrators)
+      #HAS_GPS: 0
+
+      # Region (not needed for 2G4 concentrators, defaults to EU868 for the rest)
+      #REGION: "EU868"
+
+      # Channel plan (some regions have more than one)
+      #CHANNELS: "US915_0"
+
+      # Gateway EUI (required for SX1301 concentrators without network_mode: host,
+      # otherwise only to override the concentrator's own)
+      #GATEWAY_EUI: "0123456789ABCDEF"
+
+      # Log level (TRACE, DEBUG, INFO, WARN, ERROR). Defaults to INFO.
+      #LOGGING_LEVEL: "INFO"
+
+      # IPC socket name the chirpstack-mqtt-forwarder, chirpstack-udp-forwarder or chirpstack-gateway-mesh services connect to
+      #SOCKET_NAME: "concentratord"

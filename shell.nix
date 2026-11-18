@@ -19,4 +19,5 @@ pkgs.mkShell {
   '';
   DOCKER_BUILDKIT = "1";
   NIX_STORE = "/nix/store";
+  CROSS_BUILD_OPTS="--load";
 }

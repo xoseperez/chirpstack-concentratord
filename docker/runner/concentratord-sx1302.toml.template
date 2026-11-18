@@ -1,0 +1,58 @@
+# Concentratord configuration for SX1302/3 concentrators. Concentratord reads
+# the region and channel files of the chosen region after this one.
+
+[concentratord]
+
+  # Log level.
+  #
+  # Valid options are:
+  #   * TRACE
+  #   * DEBUG
+  #   * INFO
+  #   * WARN
+  #   * ERROR
+  log_level="${LOGGING_LEVEL}"
+
+  # Log to syslog.
+  #
+  # When set to true, log messages are being written to syslog instead of stdout.
+  log_to_syslog=false
+
+  # Statistics interval.
+  stats_interval="30s"
+
+  # Configuration for the (ZeroMQ based) API.
+  [concentratord.api]
+
+    # Event PUB socket bind.
+    event_bind="ipc:///tmp/${SOCKET_NAME}_event"
+
+    # Command REP socket bind.
+    command_bind="ipc:///tmp/${SOCKET_NAME}_command"
+
+
+# LoRa gateway configuration.
+[gateway]
+
+  # Antenna gain (dBi).
+  antenna_gain=0
+
+  # Public LoRaWAN network.
+  lorawan_public=true
+
+  # Region.
+  region="${CONFIG_REGION}"
+
+  # Gateway vendor / model.
+  model="${MODEL}"
+
+  # Gateway vendor / model flags.
+  model_flags=${MODEL_FLAGS}
+
+  # Gateway ID.
+  #
+  # Only set this to override the Gateway ID provided by the SX1302/3.
+  gateway_id="${GATEWAY_EUI}"
+
+  # The start script appends optional reset and power-enable settings after
+  # this line, so [gateway] must stay the last table in this file.

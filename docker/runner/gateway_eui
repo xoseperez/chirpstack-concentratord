@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+
+# Prints the gateway EUI reported by the running concentratord:
+#
+#   docker exec <container> gateway_eui
+
+cd "$(dirname "$0")" || exit 1
+GATEWAY_EUI=$( ./gateway-id -c "ipc:///tmp/${SOCKET_NAME:-concentratord}_command" )
+echo "${GATEWAY_EUI^^}"

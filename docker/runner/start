@@ -1,0 +1,320 @@
+#!/usr/bin/env bash
+
+# Entry point of the ChirpStack Concentratord image: picks the binary for the
+# concentrator model, builds the configuration from environment variables,
+# resets USB concentrators through GPIOs when asked to, then starts
+# concentratord.
+#
+#   bash start            start concentratord
+#   bash start --render   print the configuration and exit
+
+source ./common.sh
+
+# -----------------------------------------------------------------------------
+# Model and design
+# -----------------------------------------------------------------------------
+
+# Product and chip names accepted as MODEL, besides concentratord's own model
+# names. Keys are lower case: MODEL is lower-cased before the lookup.
+declare -A MODEL_TRANSLATE=(
+    [rak7243]=rak_2245 [rak7243c]=rak_2245 [rak7244]=rak_2245 [rak7244c]=rak_2245
+    [rak7246]=rak_2246 [rak7246g]=rak_2246
+    [rak7248]=rak_2287 [rak7248c]=rak_2287 [rak7271]=rak_2287 [rak7371]=rak_5146
+    [rak831]=rak_2245 [rak833]=rak_2245 [rak2245]=rak_2245 [rak2246]=rak_2246 [rak2247]=rak_2247
+    [rak2287]=rak_2287 [rak5146]=rak_5146 [rak5148]=rak_5148
+    [ic880a]=imst_ic880a [wm1302]=seeed_wm1302 [sx1280zxxxxgw1]=semtech_sx1280z3dsfgw1
+    [sx1301]=rak_2245 [sx1302]=rak_2287 [sx1303]=rak_5146 [sx1280]=semtech_sx1280z3dsfgw1
+)
+
+# Products that are USB concentrators, or come with a GPS.
+MODELS_WITH_USB="RAK7271 RAK7371 RAK5148 SX1280ZXXXXGW1"
+MODELS_WITH_GPS="RAK7243 RAK7243C RAK7244 RAK7244C RAK7246G RAK7248 RAK7248C RAK831 RAK2245"
+
+MODEL=${MODEL:-}
+if [[ -z "${MODEL}" ]]; then
+    fail "MODEL is required: set it to your concentrator model (see the README)"
+fi
+ORIGINAL_MODEL=${MODEL}
+MODEL=${MODEL,,}
+MODEL=${MODEL_TRANSLATE[${MODEL}]:-${MODEL}}
+
+# Each binary supports its own list of models, taken from its source when the
+# image was built.
+DESIGN=""
+for LIST in models/*; do
+    if grep -qx -- "${MODEL}" "${LIST}"; then
+        DESIGN=${LIST#models/}
+        break
+    fi
+done
+if [[ -z "${DESIGN}" ]]; then
+    fail "Unknown MODEL '${ORIGINAL_MODEL}'. Valid values: $(sort models/* | tr '\n' ' ')"
+fi
+
+# -----------------------------------------------------------------------------
+# Defaults
+# -----------------------------------------------------------------------------
+
+env_alias LOGGING_LEVEL DEBUG
+
+LOGGING_LEVEL=${LOGGING_LEVEL:-"INFO"}
+LOGGING_LEVEL=${LOGGING_LEVEL^^}
+SOCKET_NAME=${SOCKET_NAME:-"concentratord"}
+
+if [[ " ${MODELS_WITH_USB} " == *" ${ORIGINAL_MODEL^^} "* ]]; then
+    INTERFACE=${INTERFACE:-"USB"}
+else
+    INTERFACE=${INTERFACE:-"SPI"}
+fi
+INTERFACE=${INTERFACE^^}
+
+if [[ " ${MODELS_WITH_GPS} " == *" ${ORIGINAL_MODEL^^} "* ]]; then
+    HAS_GPS=${HAS_GPS:-1}
+fi
+HAS_GPS=${HAS_GPS:-0}
+
+# The 2.4 GHz concentrators have a single band.
+if [[ "${DESIGN}" == "2g4" ]]; then
+    REGION="ism2400"
+else
+    REGION=${REGION:-"eu868"}
+fi
+REGION=${REGION,,}
+CHANNELS=${CHANNELS:-${REGION}}
+CHANNELS=${CHANNELS,,}
+case "${CHANNELS}" in
+    us915|au915|cn470) CHANNELS="${CHANNELS}_0" ;;
+esac
+REGION_FILE=configs/${DESIGN}/region_${REGION}.toml
+CHANNELS_FILE=configs/${DESIGN}/channels_${CHANNELS}.toml
+
+GATEWAY_EUI=${GATEWAY_EUI:-}
+GATEWAY_EUI_SOURCE=${GATEWAY_EUI_SOURCE:-}
+
+# GPIOs. SPI concentrators are reset by concentratord itself, on their model's
+# default pins unless RESET_GPIO or POWER_EN_GPIO say otherwise. USB
+# concentrators have no reset line of their own: when RESET_GPIO or
+# POWER_EN_GPIO are set, this script drives those lines before starting.
+RESET_GPIO=${RESET_GPIO:-0}
+RESET_ACTIVE=${RESET_ACTIVE:-1}
+
+# The RAK833-SPI/USB has a switch selecting USB or SPI; on the RAK2247 and
+# RAK2287 hats it is wired to GPIO20.
+if [[ "${ORIGINAL_MODEL^^}" == "RAK833" && "${INTERFACE}" == "SPI" ]]; then
+    POWER_EN_GPIO=${POWER_EN_GPIO:-20}
+    POWER_EN_LOGIC=${POWER_EN_LOGIC:-0}
+fi
+POWER_EN_GPIO=${POWER_EN_GPIO:-0}
+POWER_EN_LOGIC=${POWER_EN_LOGIC:-1}
+
+# GPIO_CHIP, when set, is also handed to concentratord for SPI concentrators;
+# otherwise concentratord uses its model's default chip. The defaults below are
+# only for driving USB concentrators' reset lines, where the Raspberry Pi 5
+# needs libgpiod.
+GPIO_CHIP_SET=${GPIO_CHIP:-}
+if grep -q "Raspberry Pi 5" /proc/cpuinfo 2>/dev/null; then
+    USE_LIBGPIOD=${USE_LIBGPIOD:-1}
+    GPIO_CHIP=${GPIO_CHIP:-gpiochip4}
+else
+    USE_LIBGPIOD=${USE_LIBGPIOD:-0}
+    GPIO_CHIP=${GPIO_CHIP:-gpiochip0}
+fi
+GPIO_CHIP=${GPIO_CHIP#/dev/}
+
+# -----------------------------------------------------------------------------
+# Checks
+# -----------------------------------------------------------------------------
+
+# Concentratord has no OFF level: it refuses to start with one.
+if [[ ! "${LOGGING_LEVEL}" =~ ^(TRACE|DEBUG|INFO|WARN|ERROR)$ ]]; then
+    fail "LOGGING_LEVEL must be one of TRACE, DEBUG, INFO, WARN or ERROR (got '${LOGGING_LEVEL}')"
+fi
+if [[ ! "${INTERFACE}" =~ ^(SPI|USB)$ ]]; then
+    fail "INTERFACE must be SPI or USB (got '${INTERFACE}')"
+fi
+for VAR in HAS_GPS RESET_ACTIVE POWER_EN_LOGIC USE_LIBGPIOD; do
+    if [[ ! "${!VAR}" =~ ^[01]$ ]]; then
+        fail "${VAR} must be 0 or 1 (got '${!VAR}')"
+    fi
+done
+if [[ ! "${POWER_EN_GPIO}" =~ ^[0-9]+$ ]]; then
+    fail "POWER_EN_GPIO must be a GPIO number (got '${POWER_EN_GPIO}')"
+fi
+# Only the USB reset scripts can drive several reset lines.
+if [[ "${INTERFACE}" == "USB" ]]; then
+    if [[ ! "${RESET_GPIO}" =~ ^[0-9]+(,[0-9]+)*$ ]]; then
+        fail "RESET_GPIO must be a GPIO number, or a comma-separated list of them (got '${RESET_GPIO}')"
+    fi
+elif [[ ! "${RESET_GPIO}" =~ ^[0-9]+$ ]]; then
+    fail "RESET_GPIO must be a GPIO number (got '${RESET_GPIO}')"
+fi
+if [[ ! -f "${REGION_FILE}" ]]; then
+    REGIONS=""
+    for FILE in configs/"${DESIGN}"/region_*.toml; do
+        FILE=${FILE##*/region_}
+        REGIONS+="${FILE%.toml} "
+    done
+    fail "Unknown REGION '${REGION}' for ${MODEL}. Valid values: ${REGIONS}"
+fi
+if [[ ! -f "${CHANNELS_FILE}" ]]; then
+    PLANS=""
+    for FILE in configs/"${DESIGN}"/channels_"${REGION}"*.toml; do
+        FILE=${FILE##*/channels_}
+        PLANS+="${FILE%.toml} "
+    done
+    fail "Unknown CHANNELS '${CHANNELS}' for region ${REGION}. Valid values: ${PLANS}"
+fi
+
+# -----------------------------------------------------------------------------
+# Gateway EUI
+# -----------------------------------------------------------------------------
+
+# The SX1301 has no EUI of its own, so one is derived from a network interface's
+# MAC address unless GATEWAY_EUI is set. The SX1302/3 and SX1280 concentrators
+# report their own; GATEWAY_EUI only overrides it.
+EUI_ORIGIN=""
+if [[ "${DESIGN}" == "sx1301" && -z "${GATEWAY_EUI}" ]]; then
+    if [[ -z "${GATEWAY_EUI_SOURCE}" ]]; then
+        for INET in eth0 wlan0 usb0 eth1; do
+            if [[ -e "/sys/class/net/${INET}" ]]; then
+                GATEWAY_EUI_SOURCE=${INET}
+                break
+            fi
+        done
+    fi
+    # Otherwise, the interface that received the most bytes.
+    if [[ -z "${GATEWAY_EUI_SOURCE}" ]]; then
+        GATEWAY_EUI_SOURCE=$(tail -n +3 /proc/net/dev | grep -v '^ *lo:' | sort -t: -k2 -nr | head -n1 | cut -d: -f1 | tr -d ' ')
+    fi
+    MAC=$(cat "/sys/class/net/${GATEWAY_EUI_SOURCE}/address" 2>/dev/null)
+    if [[ ! "${MAC}" =~ ^[0-9a-fA-F]{2}(:[0-9a-fA-F]{2}){5}$ ]]; then
+        fail "Cannot read a MAC address from interface '${GATEWAY_EUI_SOURCE}' to derive the gateway EUI: set GATEWAY_EUI"
+    fi
+    GATEWAY_EUI=$(awk -F: '{print $1$2$3"FFFE"$4$5$6}' <<< "${MAC}")
+    EUI_ORIGIN="from the MAC address of ${GATEWAY_EUI_SOURCE}"
+    # A locally administered address is a virtual one, such as the container's
+    # own interface without network_mode: host. It can change when the
+    # container is recreated, and the gateway EUI with it.
+    if (( 0x${MAC:0:2} & 2 )); then
+        warn "${GATEWAY_EUI_SOURCE} has a locally administered MAC address (${MAC}), likely the container's own" \
+            "interface: the gateway EUI can change when the container is recreated. Set GATEWAY_EUI, or use" \
+            "network_mode: host."
+    fi
+fi
+GATEWAY_EUI=${GATEWAY_EUI^^}
+if [[ -n "${GATEWAY_EUI}" && ! "${GATEWAY_EUI}" =~ ^[0-9A-F]{16}$ ]]; then
+    fail "GATEWAY_EUI must be 16 hexadecimal characters (got '${GATEWAY_EUI}')"
+fi
+if [[ -n "${GATEWAY_EUI}" && -z "${EUI_ORIGIN}" ]]; then
+    EUI_ORIGIN="from GATEWAY_EUI"
+fi
+
+# -----------------------------------------------------------------------------
+# Configuration
+# -----------------------------------------------------------------------------
+
+# Model flags: the 2.4 GHz binary reads none.
+FLAGS=()
+if [[ "${DESIGN}" != "2g4" ]]; then
+    [[ "${INTERFACE}" == "USB" ]] && FLAGS+=('"USB"')
+    [[ "${HAS_GPS}" == "1" ]] && FLAGS+=('"GNSS"')
+fi
+# MODEL_FLAGS and CONFIG_REGION are only read by render, by name.
+# shellcheck disable=SC2034
+MODEL_FLAGS="[$(IFS=,; echo "${FLAGS[*]}")]"
+
+# shellcheck disable=SC2034
+CONFIG_REGION=${REGION^^}
+CONFIG_FILE=./run/concentratord.toml
+
+render "concentratord-${DESIGN}.toml.template" "${CONFIG_FILE}" \
+    LOGGING_LEVEL SOCKET_NAME CONFIG_REGION MODEL MODEL_FLAGS GATEWAY_EUI
+
+# Optional [gateway] settings, appended to the end of the file, which is still
+# inside the [gateway] table. Only SPI concentrators use them.
+if [[ "${INTERFACE}" == "SPI" ]]; then
+    {
+        case "${DESIGN}" in
+            sx1301)
+                [[ -n "${GPIO_CHIP_SET}" ]] && echo "  sx1301_reset_chip=\"/dev/${GPIO_CHIP}\""
+                [[ "${RESET_GPIO}" != "0" ]] && echo "  sx1301_reset_pin=${RESET_GPIO}"
+                ;;
+            sx1302)
+                [[ -n "${GPIO_CHIP_SET}" ]] && echo "  sx1302_reset_chip=\"/dev/${GPIO_CHIP}\""
+                [[ "${RESET_GPIO}" != "0" ]] && echo "  sx1302_reset_pin=${RESET_GPIO}"
+                [[ -n "${GPIO_CHIP_SET}" ]] && echo "  sx1302_power_en_chip=\"/dev/${GPIO_CHIP}\""
+                [[ "${POWER_EN_GPIO}" != "0" ]] && echo "  sx1302_power_en_pin=${POWER_EN_GPIO}"
+                ;;
+        esac
+        true
+    } >> "${CONFIG_FILE}"
+fi
+
+# Concentratord reads the three files as one, in this order.
+if [[ "${1:-}" == "--render" ]]; then
+    cat "${CONFIG_FILE}" "${REGION_FILE}" "${CHANNELS_FILE}"
+    exit 0
+fi
+
+# -----------------------------------------------------------------------------
+# Info
+# -----------------------------------------------------------------------------
+
+BINARY="./${DESIGN}/chirpstack-concentratord-${DESIGN}"
+
+echo
+info "------------------------------------------------------------------"
+info "$( "${BINARY}" -V )"
+info "Concentrator HAL daemon for LoRa(WAN) gateways"
+info "------------------------------------------------------------------"
+if [[ "${MODEL}" != "${ORIGINAL_MODEL}" ]]; then
+    info "Model:          ${MODEL} (${ORIGINAL_MODEL})"
+else
+    info "Model:          ${MODEL}"
+fi
+info "Design:         ${DESIGN}"
+info "Interface:      ${INTERFACE}"
+if [[ "${RESET_GPIO}" != "0" ]]; then
+    info "Reset GPIO:     ${RESET_GPIO}"
+elif [[ "${INTERFACE}" == "SPI" ]]; then
+    info "Reset GPIO:     model default"
+fi
+if [[ "${POWER_EN_GPIO}" != "0" ]]; then
+    info "Enable GPIO:    ${POWER_EN_GPIO}"
+fi
+if [[ -n "${GPIO_CHIP_SET}" ]]; then
+    info "GPIO chip:      ${GPIO_CHIP}"
+fi
+if [[ -n "${GATEWAY_EUI}" ]]; then
+    info "Gateway EUI:    ${GATEWAY_EUI} (${EUI_ORIGIN})"
+else
+    info "Gateway EUI:    from the concentrator (run 'docker exec <container> gateway_eui')"
+fi
+info "Region:         ${REGION}"
+info "Channels:       ${CHANNELS}"
+info "Has GPS:        ${HAS_GPS}"
+info "Socket name:    ${SOCKET_NAME}"
+info "------------------------------------------------------------------"
+info "Resources: https://www.chirpstack.io/docs/chirpstack-concentratord"
+info "           https://github.com/chirpstack/chirpstack-concentratord"
+info "------------------------------------------------------------------"
+echo
+
+# -----------------------------------------------------------------------------
+# Start
+# -----------------------------------------------------------------------------
+
+if [[ "${INTERFACE}" == "USB" ]] && [[ "${RESET_GPIO}" != "0" || "${POWER_EN_GPIO}" != "0" ]]; then
+    export GPIO_CHIP RESET_GPIO RESET_ACTIVE POWER_EN_GPIO POWER_EN_LOGIC
+    if [[ "${USE_LIBGPIOD}" == "1" ]]; then
+        bash ./reset-gpiod.sh
+    else
+        bash ./reset-sysfs.sh
+    fi
+fi
+
+# Sockets left over from a previous run would be picked up by the other
+# services before concentratord binds new ones.
+rm -f "/tmp/${SOCKET_NAME}_event" "/tmp/${SOCKET_NAME}_command"
+
+exec "${BINARY}" -c "${CONFIG_FILE}" -c "${REGION_FILE}" -c "${CHANNELS_FILE}"
